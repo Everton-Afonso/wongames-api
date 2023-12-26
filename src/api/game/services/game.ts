@@ -12,7 +12,7 @@ const developerService = "api::developer.developer";
 const categoryService = "api::category.category";
 const platformService = "api::platform.platform";
 
-async function getGameIngo(slug) {
+async function getGameInfo(slug) {
   const gogSlug = slug.replaceAll("-", "_").toLowerCase();
 
   const body = await axios.get(`https://www.gog.com/en/game/${gogSlug}`);
@@ -99,6 +99,49 @@ async function createManyToManyData(products) {
   ]);
 }
 
+async function createGames(products) {
+  await Promise.all(
+    products.map(async (product) => {
+      const item = await getByName(product.title, gameService);
+
+      if (!item) {
+        console.info(`Creating: ${product.title}...`);
+
+        const game = await strapi.service(`${gameService}`).create({
+          data: {
+            name: product.title,
+            slug: product.slug,
+            price: product.price.finalMoney.amount,
+            release_date: new Date(product.releaseDate),
+            categories: await Promise.all(
+              product.genres.map(({ name }) => getByName(name, categoryService))
+            ),
+            platforms: await Promise.all(
+              product.operatingSystems.map((name) =>
+                getByName(name, platformService)
+              )
+            ),
+            developers: await Promise.all(
+              product.developers.map((name) =>
+                getByName(name, developerService)
+              )
+            ),
+            publisher: await Promise.all(
+              product.publishers.map((name) =>
+                getByName(name, publisherService)
+              )
+            ),
+            ...(await getGameInfo(product.slug)),
+            publishedAt: new Date(),
+          },
+        });
+
+        return game;
+      }
+    })
+  );
+}
+
 export default factories.createCoreService(gameService, () => ({
   async populate(params) {
     const gogApiUrl = `https://catalog.gog.com/v1/catalog?limit=48&order=desc%3Atrending`;
@@ -108,5 +151,6 @@ export default factories.createCoreService(gameService, () => ({
     } = await axios.get(gogApiUrl);
 
     await createManyToManyData([products[0], products[2]]);
+    await createGames([products[0], products[2]]);
   },
 }));
